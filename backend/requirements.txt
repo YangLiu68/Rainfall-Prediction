@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+torch
+httpx
+google-generativeai
+python-dotenv
+numpy
+pandas
+timezonefinder
