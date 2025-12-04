@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
 import { Chat } from '@/types/chat';
-import { ChatMessage } from './ChatMessage';
+import { Cloud, CloudRain, Droplets } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { ChatInput } from './ChatInput';
-import { CloudRain, Droplets, Cloud } from 'lucide-react';
+import { ChatMessage } from './ChatMessage';
 
 interface ChatAreaProps {
   chat: Chat | null;

@@ -1,7 +1,7 @@
-import { Message } from '@/types/chat';
 import { cn } from '@/lib/utils';
+import { Message } from '@/types/chat';
 import { format } from 'date-fns';
-import { User, CloudRain } from 'lucide-react';
+import { CloudRain, User } from 'lucide-react';
 
 interface ChatMessageProps {
   message: Message;
@@ -9,6 +9,17 @@ interface ChatMessageProps {
 
 export const ChatMessage = ({ message }: ChatMessageProps) => {
   const isUser = message.role === 'user';
+
+  // Parse markdown bold syntax (**text**)
+  const formatContent = (text: string) => {
+    const parts = text.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
 
   return (
     <div
@@ -43,7 +54,7 @@ export const ChatMessage = ({ message }: ChatMessageProps) => {
         )}
       >
         <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {message.content}
+          {formatContent(message.content)}
         </p>
         <p
           className={cn(

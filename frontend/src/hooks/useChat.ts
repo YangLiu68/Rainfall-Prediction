@@ -1,9 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { chatAPI } from '@/services/api';
 import { Chat, Message } from '@/types/chat';
+import { useCallback, useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'rainfall-predictor-chats';
+const LOCATION_KEY = 'rainfall-predictor-location';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
+
+interface StoredLocation {
+  city: string;
+  latitude: number;
+  longitude: number;
+}
 
 const getStoredChats = (): Chat[] => {
   try {
@@ -34,49 +42,41 @@ const saveChats = (chats: Chat[]) => {
   }
 };
 
-const generateResponse = (userMessage: string): string => {
-  const lowerMessage = userMessage.toLowerCase();
-  
-  if (lowerMessage.includes('rain') || lowerMessage.includes('rainfall')) {
-    const responses = [
-      "Based on current atmospheric conditions, there's a 65% chance of rainfall in the next 24 hours. The humidity levels are elevated, and a low-pressure system is approaching.",
-      "Looking at the latest weather patterns, light to moderate rainfall is expected. Make sure to carry an umbrella!",
-      "The precipitation forecast shows scattered showers likely in the afternoon. Cloud cover is increasing from the west.",
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
+const getStoredLocation = (): StoredLocation | null => {
+  try {
+    const stored = localStorage.getItem(LOCATION_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Error loading location:', error);
   }
-  
-  if (lowerMessage.includes('weather') || lowerMessage.includes('forecast')) {
-    return "The current weather analysis shows partly cloudy skies with temperatures around 72°F (22°C). Wind speeds are moderate at 12 mph from the southwest. There's a 40% chance of precipitation later today.";
+  return null;
+};
+
+const saveLocation = (location: StoredLocation | null) => {
+  try {
+    if (location) {
+      localStorage.setItem(LOCATION_KEY, JSON.stringify(location));
+    } else {
+      localStorage.removeItem(LOCATION_KEY);
+    }
+  } catch (error) {
+    console.error('Error saving location:', error);
   }
-  
-  if (lowerMessage.includes('temperature') || lowerMessage.includes('hot') || lowerMessage.includes('cold')) {
-    return "Current temperature readings indicate mild conditions. Expect temperatures to range between 68-78°F (20-26°C) throughout the day. The humidity is at 55%, making it feel comfortable.";
-  }
-  
-  if (lowerMessage.includes('storm') || lowerMessage.includes('thunder')) {
-    return "No severe weather alerts at this time. However, there's a developing system that could bring thunderstorms in 48-72 hours. I'll keep monitoring the situation.";
-  }
-  
-  if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey')) {
-    return "Hello! I'm your Rainfall Predictor assistant. I can help you with weather forecasts, rainfall predictions, and climate insights. What would you like to know about the weather today?";
-  }
-  
-  if (lowerMessage.includes('help')) {
-    return "I can help you with:\n• Rainfall predictions and forecasts\n• Current weather conditions\n• Temperature analysis\n• Storm tracking\n• Climate insights\n\nJust ask me any weather-related question!";
-  }
-  
-  return "I'm here to help with weather and rainfall predictions. You can ask me about current conditions, forecasts, rainfall chances, temperature trends, or storm tracking. What would you like to know?";
 };
 
 export const useChat = () => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<StoredLocation | null>(null);
 
   useEffect(() => {
     const storedChats = getStoredChats();
+    const storedLocation = getStoredLocation();
     setChats(storedChats);
+    setCurrentLocation(storedLocation);
     if (storedChats.length > 0) {
       setActiveChatId(storedChats[0].id);
     }
@@ -87,6 +87,10 @@ export const useChat = () => {
       saveChats(chats);
     }
   }, [chats]);
+
+  useEffect(() => {
+    saveLocation(currentLocation);
+  }, [currentLocation]);
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) || null;
 
@@ -107,7 +111,7 @@ export const useChat = () => {
     if (!content.trim()) return;
 
     let chatId = activeChatId;
-    
+
     if (!chatId) {
       chatId = createNewChat();
     }
@@ -136,32 +140,64 @@ export const useChat = () => {
 
     setIsLoading(true);
 
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+    try {
+      // Call the real API
+      const response = await chatAPI.sendMessage({
+        message: content.trim(),
+        current_location: currentLocation,
+      });
 
-    const responseContent = generateResponse(content);
-    const assistantMessage: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: responseContent,
-      timestamp: new Date(),
-    };
+      // Update location if returned
+      if (response.location) {
+        setCurrentLocation(response.location);
+      }
 
-    setChats((prev) =>
-      prev.map((chat) => {
-        if (chat.id === chatId) {
-          return {
-            ...chat,
-            messages: [...chat.messages, assistantMessage],
-            updatedAt: new Date(),
-          };
-        }
-        return chat;
-      })
-    );
+      const assistantMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: response.response,
+        timestamp: new Date(),
+      };
 
-    setIsLoading(false);
-  }, [activeChatId, createNewChat]);
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id === chatId) {
+            return {
+              ...chat,
+              messages: [...chat.messages, assistantMessage],
+              updatedAt: new Date(),
+            };
+          }
+          return chat;
+        })
+      );
+    } catch (error) {
+      console.error('Error sending message:', error);
+
+      // Show error message to user
+      const errorMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please make sure the backend server is running.`,
+        timestamp: new Date(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) => {
+          if (chat.id === chatId) {
+            return {
+              ...chat,
+              messages: [...chat.messages, errorMessage],
+              updatedAt: new Date(),
+            };
+          }
+          return chat;
+        })
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [activeChatId, createNewChat, currentLocation]);
 
   const deleteChat = useCallback((chatId: string) => {
     setChats((prev) => {
@@ -187,6 +223,7 @@ export const useChat = () => {
     activeChat,
     activeChatId,
     isLoading,
+    currentLocation,
     setActiveChatId,
     createNewChat,
     sendMessage,
